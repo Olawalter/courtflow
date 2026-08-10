@@ -13,10 +13,11 @@ structured judgment that automatically settles escrow.
 MVP scope: a single concrete case — an AI Logo Design Agreement (buyer hires provider
 for an original logo; buyer disputes on copyright grounds; GenLayer adjudicates).
 
-**Status: working end-to-end**, verified through two independent paths — a scripted
-run against `genlayer-js` and manual testing through the actual browser UI with a
-real injected wallet — both reaching a real GenLayer consensus judgment and automatic
-settlement. See [Verification](#verification) below.
+**Status: working end-to-end**, verified through three independent paths — the
+formal `gltest` integration suite, a scripted run against `genlayer-js`, and manual
+testing through the actual browser UI with a real injected wallet — all reaching a
+real GenLayer consensus judgment and automatic settlement. See
+[Verification](#verification) below.
 
 ## Why GenLayer
 
@@ -49,7 +50,7 @@ what it changed.
 ```
 contracts/courtflow.py        Intelligent Contract (GenVM v0.3.0-rc7 SDK)
 tests/direct/                 In-process unit tests -- 74 tests, all passing
-tests/integration/            Real-consensus test against a live network (gltest)
+tests/integration/            Real-consensus test against a live network (gltest) -- passing
 frontend/                     Next.js app
 frontend/scripts/e2e_demo.mjs Scripted end-to-end run via genlayer-js (see below)
 docs/                         architecture, contract spec, adjudication model, security review
@@ -95,11 +96,14 @@ gltest tests/integration/test_adjudication.py -v -s --network studionet
 ```
 
 The integration test runs the complete lifecycle — including a real
-`run_judgment` consensus call — against a live network. It targets StudioNet
-because no local Docker/localnet was available while building this; StudioNet
-rate-limits aggressively (30 req/min, 500 req/hour) so the test paces itself and
-is intentionally a single end-to-end run rather than a parametrized suite (the 74
-direct tests already cover branch/edge-case behavior against mocked execution).
+`run_judgment` consensus call — against a live network, and passes
+(`1 passed in 1447.98s`, i.e. ~24 minutes, dominated by StudioNet's rate-limit
+pacing rather than actual consensus time). It targets StudioNet because no local
+Docker/localnet was available while building this; StudioNet rate-limits
+aggressively (30 req/min, 500 req/hour) so the test paces itself with deliberate
+delays between steps and is intentionally a single end-to-end run rather than a
+parametrized suite (the 74 direct tests already cover branch/edge-case behavior
+against mocked execution).
 
 ## Deployment
 
@@ -132,8 +136,10 @@ them in the wallet as you move through the lifecycle.
 
 The full lifecycle — create → accept → fund escrow → deliver → dispute → respond →
 **real GenLayer consensus judgment** → automatic settlement → reputation update — has
-been run to completion multiple times on StudioNet:
+been run to completion multiple times on StudioNet, through every layer of the stack:
 
+- **`gltest tests/integration/test_adjudication.py`** — the official GenLayer test
+  framework, real consensus, `1 passed`.
 - **Scripted**, via `frontend/scripts/e2e_demo.mjs` (uses `genlayer-js` directly, since
   the `genlayer` CLI's `write` command has no `--value` flag and can't call payable
   methods):
