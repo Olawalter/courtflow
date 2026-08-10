@@ -23,6 +23,19 @@ real GenLayer consensus judgment and automatic settlement. See
 plain-language explanation of what this actually does and why it needed GenLayer
 specifically, without the marketing language.
 
+## Live deployment
+
+| | |
+|---|---|
+| Network | GenLayer StudioNet (chain ID `61999`) |
+| Contract address | [`0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34`](https://genlayer-explorer.vercel.app/address/0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34) |
+| Includes | Both security-review fixes (`claim_delivery_timeout`, settlement-before-status-write ordering) |
+
+This is the exact contract the frontend's `frontend/.env.local` points to and the one
+`genvm-lint check` / `genlayer schema` were last run against. It's a fresh instance
+(no agreements on it yet) — walk through the [demo workflow](#demo-workflow) against
+it directly, or deploy your own with the steps below.
+
 ## Why GenLayer
 
 A normal EVM contract can move money based on explicit state, but it cannot decide
@@ -111,17 +124,22 @@ against mocked execution).
 
 ## Deployment
 
+To use the [live deployment](#live-deployment) above, just point `frontend/.env.local`
+at it (see below) and skip straight to [Running the frontend](#running-the-frontend).
+
+To deploy your own instead:
+
 ```bash
 genlayer network set studionet     # or another built-in network
 genlayer deploy --contract contracts/courtflow.py
 genlayer schema <address>          # inspect before wiring the frontend
 ```
 
-Then set `frontend/.env.local`:
+Then set `frontend/.env.local` (copy from `frontend/.env.local.example`):
 
 ```
 NEXT_PUBLIC_GENLAYER_CHAIN=studionet
-NEXT_PUBLIC_COURTFLOW_ADDRESS=<deployed address>
+NEXT_PUBLIC_COURTFLOW_ADDRESS=<your deployed address, or 0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34 for the live one>
 ```
 
 ## Running the frontend
