@@ -1,0 +1,24 @@
+# Copy this to gltest.config.yaml and fill in real values -- gltest.config.yaml
+# is gitignored precisely because it holds private keys (see root .gitignore).
+networks:
+  default: localnet
+  localnet:
+    id: 61999
+    url: http://localhost:4000/api
+    accounts:
+      # This is Hardhat/Anvil's well-known default test account #4 private key
+      # -- public, funded only on ephemeral local devnets, safe to commit.
+      - "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff8"
+  studionet:
+    id: 61999
+    url: https://studio.genlayer.com/api
+    accounts:
+      # Real keys -- generate your own (e.g. `genlayer account create`, or
+      # frontend/scripts/genkey.mjs for a throwaway one) and paste them into
+      # your local, gitignored gltest.config.yaml. Never commit real keys here.
+      - "0xYOUR_BUYER_PRIVATE_KEY"
+      - "0xYOUR_PROVIDER_PRIVATE_KEY"
+    # StudioNet is rate-limited (30 req/min, 500 req/hour); the default 3s
+    # poll interval burns through that budget fast across a multi-step flow.
+    default_wait_interval: 10000
+    default_wait_retries: 60

@@ -1,0 +1,19 @@
+# Secrets -- see gltest.config.example.yaml for the template
+gltest.config.yaml
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# GenLayer / gltest artifacts
+artifacts/
+
+# Node (frontend has its own .gitignore too, this covers root-level slips)
+node_modules/
+
+# Local tooling state (session locks, machine-specific dev-server config)
+.claude/
+
+# Editors / OS
+.DS_Store

@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --cf-background: #0b1220;
+  --cf-surface: #111827;
+  --cf-border: #243044;
+  --cf-primary: #3b82f6;
+  --cf-consensus: #7c3aed;
+  --cf-success: #10b981;
+  --cf-warning: #f59e0b;
+  --cf-dispute: #ef4444;
+
+  --background: var(--cf-background);
+  --foreground: #e5e7eb;
+  --muted-foreground: #94a3b8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--cf-surface);
+  --color-border: var(--cf-border);
+  --color-primary: var(--cf-primary);
+  --color-consensus: var(--cf-consensus);
+  --color-success: var(--cf-success);
+  --color-warning: var(--cf-warning);
+  --color-dispute: var(--cf-dispute);
+  --color-muted-foreground: var(--muted-foreground);
+  --font-sans: var(--font-inter);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer components {
+  .input {
+    @apply rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50;
+  }
+}

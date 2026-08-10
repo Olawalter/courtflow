@@ -1,0 +1,180 @@
+# CourtFlow
+
+**The Adjudication Layer for Agentic Commerce**
+
+> What happens when two agents disagree about whether a promise was fulfilled?
+
+CourtFlow is a trustless adjudication protocol for autonomous-agent commerce, built on
+GenLayer. Two agents create an agreement, lock payment in escrow, exchange a
+deliverable, and — if they disagree about whether it was fulfilled — send the
+contested commitment through GenLayer's decentralized AI-validator consensus for a
+structured judgment that automatically settles escrow.
+
+MVP scope: a single concrete case — an AI Logo Design Agreement (buyer hires provider
+for an original logo; buyer disputes on copyright grounds; GenLayer adjudicates).
+
+**Status: working end-to-end**, verified through two independent paths — a scripted
+run against `genlayer-js` and manual testing through the actual browser UI with a
+real injected wallet — both reaching a real GenLayer consensus judgment and automatic
+settlement. See [Verification](#verification) below.
+
+## Why GenLayer
+
+A normal EVM contract can move money based on explicit state, but it cannot decide
+"does this logo contain copyrighted material?" — that requires judgment. GenLayer's
+Intelligent Contracts can call an LLM as part of consensus (Optimistic Democracy):
+the leader validator produces a judgment, and other validators check that judgment
+against an explicit equivalence principle rather than trusting one node's opinion.
+See [`docs/adjudication-model.md`](docs/adjudication-model.md) for exactly which
+primitive we use and why.
+
+## Architecture
+
+```
+Next.js Frontend (frontend/) ── genlayer-js, injected wallet (MetaMask/Rabby/etc.)
+        │
+        ▼
+GenLayer Chain → GenVM → Intelligent Contract (contracts/courtflow.py)
+```
+
+No custom backend. See [`docs/architecture.md`](docs/architecture.md) for the full
+system design, [`docs/contract-spec.md`](docs/contract-spec.md) for the state machine,
+storage model, escrow custody rules, and payout paths,
+[`docs/adjudication-model.md`](docs/adjudication-model.md) for the judgment pipeline,
+and [`docs/security-review.md`](docs/security-review.md) for the security pass and
+what it changed.
+
+## Repository layout
+
+```
+contracts/courtflow.py        Intelligent Contract (GenVM v0.3.0-rc7 SDK)
+tests/direct/                 In-process unit tests -- 74 tests, all passing
+tests/integration/            Real-consensus test against a live network (gltest)
+frontend/                     Next.js app
+frontend/scripts/e2e_demo.mjs Scripted end-to-end run via genlayer-js (see below)
+docs/                         architecture, contract spec, adjudication model, security review
+gltest.config.example.yaml    template -- copy to gltest.config.yaml and fill in your own keys
+```
+
+## Verified toolchain
+
+| Tool | Version |
+|---|---|
+| `genlayer` CLI | 0.39.2 |
+| `genlayer-py` (client SDK) | 0.16.3 |
+| `genlayer-js` (frontend) | 1.2.0 |
+| `genlayer-test` / `gltest` | 0.29.2 |
+| `genvm-lint` | 0.11.0 |
+| GenVM contract SDK (what the contract is written against) | v0.3.0-rc7 |
+
+Every contract-side API used here (`gl.public.write.payable`, `gl.message.value`,
+sending GEN to an EOA via `gl.evm.contract_interface`, `gl.eq_principle.prompt_non_comparative`,
+`gl.vm.UserError`, storage types) was verified by extracting and reading the actual
+GenVM v0.3.0-rc7 SDK source, then confirmed against real StudioNet deploys — several
+plausible-looking APIs (`gl.Account`, `gl.chain.Account`, `gl.get_contract_at`) turned
+out not to work for sending GEN to a plain address on the live network and are
+documented as dead ends rather than silently avoided.
+
+## Setup
+
+```bash
+pip install -r requirements.txt   # genlayer-test, etc.
+npm install -g genlayer           # CLI
+cd frontend && npm install
+```
+
+Copy `gltest.config.example.yaml` to `gltest.config.yaml` and fill in your own private
+keys (never commit real keys — `gltest.config.yaml` is gitignored on purpose).
+
+## Testing
+
+```bash
+genvm-lint check contracts/courtflow.py --json   # structural + SDK validation, clean
+pytest tests/direct/ -v                          # 74/74 passing
+gltest tests/integration/test_adjudication.py -v -s --network studionet
+```
+
+The integration test runs the complete lifecycle — including a real
+`run_judgment` consensus call — against a live network. It targets StudioNet
+because no local Docker/localnet was available while building this; StudioNet
+rate-limits aggressively (30 req/min, 500 req/hour) so the test paces itself and
+is intentionally a single end-to-end run rather than a parametrized suite (the 74
+direct tests already cover branch/edge-case behavior against mocked execution).
+
+## Deployment
+
+```bash
+genlayer network set studionet     # or another built-in network
+genlayer deploy --contract contracts/courtflow.py
+genlayer schema <address>          # inspect before wiring the frontend
+```
+
+Then set `frontend/.env.local`:
+
+```
+NEXT_PUBLIC_GENLAYER_CHAIN=studionet
+NEXT_PUBLIC_COURTFLOW_ADDRESS=<deployed address>
+```
+
+## Running the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Connect an injected wallet (MetaMask/Rabby) on the GenLayer network you deployed to
+(StudioNet: chain ID `61999`, RPC `https://studio.genlayer.com/api`). Two distinct
+accounts are needed to exercise a full agreement (buyer + provider) — switch between
+them in the wallet as you move through the lifecycle.
+
+## Verification
+
+The full lifecycle — create → accept → fund escrow → deliver → dispute → respond →
+**real GenLayer consensus judgment** → automatic settlement → reputation update — has
+been run to completion multiple times on StudioNet:
+
+- **Scripted**, via `frontend/scripts/e2e_demo.mjs` (uses `genlayer-js` directly, since
+  the `genlayer` CLI's `write` command has no `--value` flag and can't call payable
+  methods):
+  ```bash
+  cd frontend
+  BUYER_PRIVATE_KEY=0x... node scripts/e2e_demo.mjs
+  ```
+- **Manually**, through the actual browser UI with a real injected wallet, twice
+  independently.
+
+A real judgment produced during testing:
+
+```json
+{
+  "decision": "INSUFFICIENT_EVIDENCE",
+  "payout_bps": 10000,
+  "reason_codes": ["UNSUBSTANTIATED_CLAIM", "DEADLINE_MET", "REQUIREMENTS_DELIVERED"],
+  "summary": "The buyer claims the logo contains copyrighted material but provided no evidence or specific brand references to support the allegation. The provider delivered all required file formats (PNG, SVG, source) before the deadline and asserts originality. As the burden of proof rests on the claimant, the lack of evidence necessitates a decision in favor of the provider."
+}
+```
+
+Escrow settled automatically per that decision — no manual intervention, no custom
+backend, just the Intelligent Contract acting on the finalized consensus result.
+
+## Security review
+
+A dedicated pass (see [`docs/security-review.md`](docs/security-review.md)) checked
+the contract against the standard escrow/agreement/dispute/judgment/reputation attack
+surface. Two real findings, both fixed:
+
+1. **Stuck funds**: no recovery path existed if the buyer went silent after delivery
+   (the contract protected against an unresponsive *provider* but not an unresponsive
+   *buyer*). Fixed with `claim_delivery_timeout`, symmetric to the existing
+   `claim_timeout`.
+2. **Settlement ordering fragility**: `run_judgment` recorded the judgment/dispute
+   status before calling settlement; reordered so settlement happens first, so a
+   hypothetical future failure there leaves the dispute retryable instead of stuck.
+
+## Demo workflow
+
+Buyer creates agreement → provider accepts → buyer funds 5 GEN → provider delivers →
+buyer opens dispute (copyright claim) → provider responds → evidence assembled →
+GenLayer consensus → judgment finalizes → escrow settles automatically → reputation
+updates once.
