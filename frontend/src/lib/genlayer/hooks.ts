@@ -39,7 +39,12 @@ function useCourtFlowRead<T>(
     if (!DEPLOYED || skip) return;
 
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
+    // Deliberately not flashing loading=true again on refetch -- keep
+    // showing the last-known data while a re-read is in flight rather than
+    // blanking the UI, and it avoids a setState-in-effect-body lint issue
+    // for no real benefit (the initial fetch below still sets loading via
+    // the state transition, from the `loading: DEPLOYED && !skip` initial
+    // value through to `loading: false` once it resolves).
     readCourtFlow<T>(readClient, fn, args)
       .then((data) => {
         if (!cancelled) setState({ data, loading: false, error: null });
