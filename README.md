@@ -27,14 +27,16 @@ specifically, without the marketing language.
 
 | | |
 |---|---|
+| Frontend | **[courtflow-agent.vercel.app](https://courtflow-agent.vercel.app)** |
 | Network | GenLayer StudioNet (chain ID `61999`) |
 | Contract address | [`0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34`](https://genlayer-explorer.vercel.app/address/0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34) |
 | Includes | Both security-review fixes (`claim_delivery_timeout`, settlement-before-status-write ordering) |
 
-This is the exact contract the frontend's `frontend/.env.local` points to and the one
-`genvm-lint check` / `genlayer schema` were last run against. It's a fresh instance
-(no agreements on it yet) — walk through the [demo workflow](#demo-workflow) against
-it directly, or deploy your own with the steps below.
+The live frontend is wired to this exact contract and reads/writes it directly —
+open it, connect an injected wallet on StudioNet, and walk through the
+[demo workflow](#demo-workflow). It's the same contract `genvm-lint check` /
+`genlayer schema` were last run against, and already has real settled agreements on
+it from testing (see [Verification](#verification)).
 
 ## Why GenLayer
 
