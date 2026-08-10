@@ -64,7 +64,13 @@ JUDGMENT_TASK = (
     "strictly between 0 and 10000, reflecting the provider's share. "
     "INSUFFICIENT_EVIDENCE: there is not enough evidence to substantiate the buyer's "
     "claim. The burden of proof is on the claim, so treat this the same as FULFILLED "
-    "for payout purposes. Do not include any prose outside the JSON object."
+    "for payout purposes. The CASE JSON includes a "
+    "delivery_url_reachability_check field: a live check of whether a delivered "
+    "file reference actually resolves over HTTP(S), performed independently of the "
+    "provider's own claims. Treat an explicit 'verification failed' result as "
+    "material evidence the deliverable may not be genuine or accessible as claimed. "
+    "'not checked' means no http/https reference was present to verify and carries "
+    "no weight either way. Do not include any prose outside the JSON object."
 )
 
 JUDGMENT_CRITERIA = (
@@ -73,9 +79,9 @@ JUDGMENT_CRITERIA = (
     "PARTIAL, INSUFFICIENT_EVIDENCE. payout_bps must be an integer between 0 and 10000 "
     "inclusive and internally consistent with decision (10000 for FULFILLED and "
     "INSUFFICIENT_EVIDENCE, 0 for FAILED, strictly between 0 and 10000 for PARTIAL). "
-    "reason_codes must be grounded in the CASE JSON's agreement terms, buyer claim, and "
-    "provider response, not invented. summary must accurately and concisely reflect the "
-    "decision and the evidence it is based on."
+    "reason_codes must be grounded in the CASE JSON's agreement terms, buyer claim, "
+    "provider response, and delivery_url_reachability_check, not invented. summary "
+    "must accurately and concisely reflect the decision and the evidence it is based on."
 )
 
 
@@ -385,8 +391,32 @@ class CourtFlow(gl.Contract):
         dispute.status = DISPUTE_UNDER_REVIEW
         agreement.status = STATUS_UNDER_REVIEW
 
+    def _verify_delivery_reachability(self, delivery: Delivery) -> str:
+        # Live, independent check that a delivered file reference actually
+        # resolves -- not just trusting the provider's claim. Only meaningful
+        # for http(s) URLs; other schemes (ipfs://, etc.) can't be HEAD-ed, so
+        # they're reported as "not checked" rather than "failed" -- absence of
+        # a check must never read as negative evidence. Runs inside the
+        # eq_principle leader_input closure (see run_judgment) since
+        # gl.nondet.web is a non-deterministic call.
+        for ref in delivery.file_refs:
+            if not (ref.startswith("http://") or ref.startswith("https://")):
+                continue
+            try:
+                response = gl.nondet.web.head(ref)
+                if 200 <= response.status < 400:
+                    return f"verified reachable (HTTP {response.status}): {ref}"
+                return f"verification failed (HTTP {response.status}): {ref}"
+            except Exception:
+                return f"verification failed (request error): {ref}"
+        return "not checked (no http/https file reference present)"
+
     def _build_case_text(
-        self, agreement: Agreement, delivery: Delivery, dispute: Dispute
+        self,
+        agreement: Agreement,
+        delivery: Delivery,
+        dispute: Dispute,
+        delivery_url_reachability_check: str,
     ) -> str:
         case = {
             "agreement": {
@@ -407,6 +437,7 @@ class CourtFlow(gl.Contract):
                 agreement.delivered_at
                 + datetime.timedelta(seconds=int(agreement.dispute_window_seconds))
             ).isoformat(),
+            "delivery_url_reachability_check": delivery_url_reachability_check,
         }
         return json.dumps(case, sort_keys=True)
 
@@ -503,10 +534,15 @@ class CourtFlow(gl.Contract):
             raise gl.vm.UserError("only a party to the agreement may trigger judgment")
 
         delivery = self._require_delivery(agreement.agreement_id)
-        case_text = self._build_case_text(agreement, delivery, dispute)
 
         def leader_input() -> str:
-            return case_text
+            # gl.nondet.web is non-deterministic, so the reachability check
+            # (and the case text that embeds its result) must be built inside
+            # this closure -- it's re-run independently by the leader and by
+            # each validator as part of prompt_non_comparative's equivalence
+            # check, rather than executed once outside it.
+            reachability = self._verify_delivery_reachability(delivery)
+            return self._build_case_text(agreement, delivery, dispute, reachability)
 
         # Verified on live StudioNet: prompt_non_comparative returns a plain
         # str here, not a Lazy[str] (AttributeError: 'str' object has no

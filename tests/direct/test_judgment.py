@@ -238,3 +238,90 @@ def test_partial_decision_updates_provider_partials(direct_vm, deploy, buyer, pr
     assert rep["partials"] == 1
     assert rep["disputes_won"] == 0
     assert rep["disputes_lost"] == 0
+
+
+# ---- _verify_delivery_reachability: live gl.nondet.web check ------------
+#
+# Demonstrates the "live/authoritative data" capability: the judgment
+# pipeline independently checks whether a delivered file reference actually
+# resolves over HTTP(S), rather than only trusting the provider's claim.
+
+
+def test_reachability_check_reports_success_for_reachable_http_url(
+    direct_vm, deploy, buyer, provider
+):
+    contract = _judged_agreement(direct_vm, deploy, buyer, provider)
+    delivery = contract.deliveries["agr-1"]
+    delivery.file_refs = ["https://example.com/logo.svg"]
+
+    direct_vm.mock_web(
+        r"https://example\.com/logo\.svg",
+        {"method": "HEAD", "status": 200, "body": ""},
+    )
+
+    result = contract._verify_delivery_reachability(delivery)
+    assert result.startswith("verified reachable (HTTP 200)")
+    assert "https://example.com/logo.svg" in result
+
+
+def test_reachability_check_reports_failure_for_non_2xx_status(
+    direct_vm, deploy, buyer, provider
+):
+    contract = _judged_agreement(direct_vm, deploy, buyer, provider)
+    delivery = contract.deliveries["agr-1"]
+    delivery.file_refs = ["https://example.com/missing.svg"]
+
+    direct_vm.mock_web(
+        r"https://example\.com/missing\.svg",
+        {"method": "HEAD", "status": 404, "body": ""},
+    )
+
+    result = contract._verify_delivery_reachability(delivery)
+    assert result.startswith("verification failed (HTTP 404)")
+
+
+def test_reachability_check_skips_non_http_schemes(direct_vm, deploy, buyer, provider):
+    contract = _judged_agreement(direct_vm, deploy, buyer, provider)
+    delivery = contract.deliveries["agr-1"]
+    delivery.file_refs = ["ipfs://bafybeigdyrzt-example"]
+
+    result = contract._verify_delivery_reachability(delivery)
+    assert result == "not checked (no http/https file reference present)"
+
+
+def test_reachability_check_uses_first_http_ref_only(direct_vm, deploy, buyer, provider):
+    contract = _judged_agreement(direct_vm, deploy, buyer, provider)
+    delivery = contract.deliveries["agr-1"]
+    delivery.file_refs = [
+        "ipfs://bafybeigdyrzt-example",
+        "https://example.com/logo.svg",
+    ]
+
+    direct_vm.mock_web(
+        r"https://example\.com/logo\.svg",
+        {"method": "HEAD", "status": 200, "body": ""},
+    )
+
+    result = contract._verify_delivery_reachability(delivery)
+    assert result.startswith("verified reachable (HTTP 200)")
+
+
+def test_build_case_text_embeds_reachability_result(direct_vm, deploy, buyer, provider):
+    contract = _judged_agreement(direct_vm, deploy, buyer, provider)
+    agreement = contract.agreements["agr-1"]
+    delivery = contract.deliveries["agr-1"]
+
+    direct_vm.sender = buyer
+    contract.open_dispute("agr-1", "disp-1", "the logo looks copied")
+    dispute = contract.disputes["disp-1"]
+
+    case_text = contract._build_case_text(
+        agreement,
+        delivery,
+        dispute,
+        "verified reachable (HTTP 200): https://example.com/logo.svg",
+    )
+    case = json.loads(case_text)
+    assert case["delivery_url_reachability_check"] == (
+        "verified reachable (HTTP 200): https://example.com/logo.svg"
+    )

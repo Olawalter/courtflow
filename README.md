@@ -29,8 +29,8 @@ specifically, without the marketing language.
 |---|---|
 | Frontend | **[courtflow-agent.vercel.app](https://courtflow-agent.vercel.app)** |
 | Network | GenLayer StudioNet (chain ID `61999`) |
-| Contract address | [`0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34`](https://genlayer-explorer.vercel.app/address/0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34) |
-| Includes | Both security-review fixes (`claim_delivery_timeout`, settlement-before-status-write ordering) |
+| Contract address | [`0xAC2F534da76dFe59e3dBbCB3F822E414E3fd81dE`](https://genlayer-explorer.vercel.app/address/0xAC2F534da76dFe59e3dBbCB3F822E414E3fd81dE) |
+| Includes | Both security-review fixes (`claim_delivery_timeout`, settlement-before-status-write ordering) plus a live `gl.nondet.web` reachability check in the judgment pipeline |
 
 The live frontend is wired to this exact contract and reads/writes it directly —
 open it, connect an injected wallet on StudioNet, and walk through the
@@ -141,7 +141,7 @@ Then set `frontend/.env.local` (copy from `frontend/.env.local.example`):
 
 ```
 NEXT_PUBLIC_GENLAYER_CHAIN=studionet
-NEXT_PUBLIC_COURTFLOW_ADDRESS=<your deployed address, or 0xDbFD7f2D1B4fCe5C0E4c713E9Dd5BE015cA29d34 for the live one>
+NEXT_PUBLIC_COURTFLOW_ADDRESS=<your deployed address, or 0xAC2F534da76dFe59e3dBbCB3F822E414E3fd81dE for the live one>
 ```
 
 ## Running the frontend
@@ -193,6 +193,20 @@ A real judgment produced during testing:
 
 Escrow settled automatically per that decision — no manual intervention, no custom
 backend, just the Intelligent Contract acting on the finalized consensus result.
+
+### Live data in the judgment pipeline
+
+Judgment isn't limited to reasoning over evidence the parties submitted. Before
+building the case for the LLM, the contract independently checks — via
+`gl.nondet.web.head()` — whether a delivered file reference actually resolves over
+HTTP(S), and folds that result into the evidence as
+`delivery_url_reachability_check`. This is a real non-deterministic web call inside
+the `prompt_non_comparative` equivalence-principle closure (leader and every
+validator each re-run it independently, per GenLayer's Optimistic Democracy model),
+not a documented-but-unused capability. See
+[`docs/adjudication-model.md`](docs/adjudication-model.md) for why it's scoped to
+HTTP(S) refs only (our own demo data uses `ipfs://` references, which report
+`"not checked"` rather than a false negative).
 
 ## Security review
 

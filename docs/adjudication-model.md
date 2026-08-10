@@ -12,8 +12,7 @@ text — into a single JSON case object before any LLM call:
   "provider_response": "...",
   "deliverable": { "file_refs": ["ipfs://...png", "ipfs://...svg", "ipfs://...source"], "submitted_at": "..." },
   "delivery_deadline_met": true,
-  "brand_guidelines": "...",
-  "external_evidence": ["..."],
+  "delivery_url_reachability_check": "not checked (no http/https file reference present)",
   "dispute_window_expiry": "..."
 }
 ```
@@ -21,23 +20,39 @@ text — into a single JSON case object before any LLM call:
 Evidence is not truth: the contract never assumes the buyer's claim or the
 provider's response is correct — both are inputs to the judgment, not conclusions.
 
-### Why no live web/external data lookup here
+### Live web data: the delivery reachability check
 
 The MVP case (is this logo original artwork?) is genuinely an evidentiary judgment
-call, not a fact that a web lookup resolves — there's no authoritative "is this
-copyrighted" API, and both parties' text submissions are the actual evidence. So
-`run_judgment` deliberately doesn't call `gl.nondet.web.*`.
+call, not a fact a web lookup alone resolves — there's no authoritative "is this
+copyrighted" API, and both parties' text submissions are the actual evidence for
+that question. But one part of the case *is* independently checkable: whether a
+delivered file reference actually resolves, rather than just being a string the
+provider typed in. `run_judgment` verifies that.
 
-That said, GenLayer's non-determinism isn't limited to text reasoning — the official
+GenLayer's non-determinism isn't limited to text reasoning — the official
 `FootballBets` example contract (in the standard boilerplate) fetches a live scores
 page via `gl.nondet.web.get`/`.render` and feeds it into the same kind of
-equivalence-principle check we use for judgment, for exactly the class of dispute
-where an authoritative external source *does* exist. CourtFlow's contract already
-has a place this plugs into: `_build_case_text` in `contracts/courtflow.py` would
-add a `gl.nondet.web.get(url)` call and fold the result into the case JSON the
-same way the delivery file refs are folded in now, if a future case needed to
-verify something checkable (e.g. that a delivery URL is actually reachable and
-serves a real file, not just a string the provider typed in).
+equivalence-principle check used for judgment here, for exactly the class of dispute
+where an authoritative external source exists. CourtFlow's contract follows the same
+pattern: `_verify_delivery_reachability` (in `contracts/courtflow.py`) calls
+`gl.nondet.web.head(url)` on the first `http(s)://` delivery reference and reports
+whether it resolved. It's called from inside the `leader_input` closure passed to
+`gl.eq_principle.prompt_non_comparative` — the same non-determinism boundary the
+`FootballBets` example uses — so the leader and every validator each independently
+re-run the live check as part of reaching consensus, rather than trusting one
+node's fetch.
+
+The result — `verified reachable (HTTP <code>): <url>`, `verification failed (...)`,
+or `not checked (no http/https file reference present)` — is folded into the case
+JSON as `delivery_url_reachability_check`, and `JUDGMENT_TASK` instructs the model to
+treat an explicit failure as material evidence but treat "not checked" as neutral.
+The demo data uses `ipfs://` references (not resolvable via plain HTTP HEAD), so it
+always reports "not checked" in the current demo runs — that's intentional: a
+non-http scheme is genuinely unverifiable this way, and the check is designed to
+never manufacture a false negative out of that. Any agreement that delivers a real
+`http(s)://` reference exercises the live check end-to-end; see
+`tests/direct/test_judgment.py` for coverage of both the success and failure paths
+via `direct_vm.mock_web()`.
 
 ## Judgment questions
 
@@ -60,8 +75,10 @@ string**; the LLM call itself is performed internally by the framework (via its
 templates), using the `task`/`criteria` you supply. The actual, verified pipeline:
 
 ```
-Evidence assembled deterministically → case_text (JSON, sort_keys=True)
-   → leader_input() -> str            # returns case_text verbatim, no LLM call in our code
+leader_input() -> str                 # closure; no LLM call in our code
+   → _verify_delivery_reachability()  # live gl.nondet.web.head() check (non-deterministic,
+                                       #   must run inside this closure, not before it)
+   → _build_case_text(..., reachability) -> case_text (JSON, sort_keys=True)
    → gl.eq_principle.prompt_non_comparative(leader_input, task=JUDGMENT_TASK, criteria=JUDGMENT_CRITERIA)
         [leader]    framework runs ExecPromptTemplate/EqNonComparativeLeader(task, input=case_text) -> str
         [validator] framework runs ExecPromptTemplate/EqNonComparativeValidator(task, output=leader's str,
