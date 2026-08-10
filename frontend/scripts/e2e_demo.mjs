@@ -19,7 +19,7 @@ function toCalldataAddress(hexAddress) {
   return new CalldataAddress(hexToBytes(hexAddress));
 }
 
-const CONTRACT = "0x4D921d5C3c5eEae8b4bE00896E47Fb0142c69470";
+const CONTRACT = "0xAC2F534da76dFe59e3dBbCB3F822E414E3fd81dE";
 const BUYER_PK = process.env.BUYER_PRIVATE_KEY;
 if (!BUYER_PK) {
   console.error("Set BUYER_PRIVATE_KEY env var");
@@ -137,10 +137,17 @@ async function main() {
   log("agreement after funding", await readAndPace(buyer, "get_agreement", [AGREEMENT_ID]));
 
   log("4. submit_delivery (provider)");
+  // One real http(s) ref included deliberately -- exercises the live
+  // gl.nondet.web.head() reachability check added to run_judgment, instead
+  // of only hitting the neutral "not checked" path that ipfs:// refs take.
   await writeAndWait(provider, "submit_delivery", [
     AGREEMENT_ID,
     `del-${AGREEMENT_ID}`,
-    ["ipfs://fake-logo.png", "ipfs://fake-logo.svg", "ipfs://fake-logo-source.ai"],
+    [
+      "https://raw.githubusercontent.com/Olawalter/courtflow/main/README.md",
+      "ipfs://fake-logo.svg",
+      "ipfs://fake-logo-source.ai",
+    ],
     "Final logo delivery",
   ]);
   log("agreement after delivery", await readAndPace(buyer, "get_agreement", [AGREEMENT_ID]));
