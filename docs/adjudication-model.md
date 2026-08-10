@@ -21,6 +21,24 @@ text — into a single JSON case object before any LLM call:
 Evidence is not truth: the contract never assumes the buyer's claim or the
 provider's response is correct — both are inputs to the judgment, not conclusions.
 
+### Why no live web/external data lookup here
+
+The MVP case (is this logo original artwork?) is genuinely an evidentiary judgment
+call, not a fact that a web lookup resolves — there's no authoritative "is this
+copyrighted" API, and both parties' text submissions are the actual evidence. So
+`run_judgment` deliberately doesn't call `gl.nondet.web.*`.
+
+That said, GenLayer's non-determinism isn't limited to text reasoning — the official
+`FootballBets` example contract (in the standard boilerplate) fetches a live scores
+page via `gl.nondet.web.get`/`.render` and feeds it into the same kind of
+equivalence-principle check we use for judgment, for exactly the class of dispute
+where an authoritative external source *does* exist. CourtFlow's contract already
+has a place this plugs into: `_build_case_text` in `contracts/courtflow.py` would
+add a `gl.nondet.web.get(url)` call and fold the result into the case JSON the
+same way the delivery file refs are folded in now, if a future case needed to
+verify something checkable (e.g. that a delivery URL is actually reachable and
+serves a real file, not just a string the provider typed in).
+
 ## Judgment questions
 
 1. Was the agreement fulfilled overall?

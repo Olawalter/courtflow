@@ -6,9 +6,11 @@ import { TopNav } from "@/components/TopNav";
 import { DeploymentBanner } from "@/components/DeploymentBanner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { LifecycleTracker } from "@/components/agreement/LifecycleTracker";
+import { TxStatusBanner } from "@/components/TxStatusBanner";
 import { useAgreement } from "@/lib/genlayer/hooks";
 import { useWallet } from "@/lib/genlayer/wallet";
-import { writeCourtFlow, waitForCourtFlowTx, weiToGen } from "@/lib/genlayer/contract";
+import { writeCourtFlow, weiToGen } from "@/lib/genlayer/contract";
+import { useTxStatus } from "@/lib/genlayer/useTxStatus";
 import type { TransactionHash } from "genlayer-js/types";
 
 function parseGenAmount(amount: number): bigint {
@@ -22,8 +24,8 @@ export default function AgreementDetailPage() {
   const { data: agreement, loading, error, deployed, refetch } = useAgreement(id);
   const client = useWallet((s) => s.client);
   const address = useWallet((s) => s.address);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const tx = useTxStatus();
+  const [activeAction, setActiveAction] = useState<string | null>(null);
   const [fileRefs, setFileRefs] = useState("ipfs://logo.png\nipfs://logo.svg\nipfs://logo-source.ai");
   const [deliveryMetadata, setDeliveryMetadata] = useState("Final logo delivery");
 
@@ -32,24 +34,14 @@ export default function AgreementDetailPage() {
     address && agreement && address.toLowerCase() === agreement.provider.toLowerCase();
 
   async function run(action: string, fn: () => Promise<TransactionHash>) {
-    if (!client) return;
-    setBusy(action);
-    setActionError(null);
-    try {
-      const hash = await fn();
-      await waitForCourtFlowTx(client, hash);
-    } catch (err) {
-      // The write itself may have already succeeded on-chain even if this
-      // wait/poll step throws (flaky RPC, timeout, etc.) -- refetch either
-      // way (see finally below) instead of trusting this catch to mean the
-      // transaction failed.
-      setActionError(err instanceof Error ? err.message : "Transaction failed");
-    } finally {
+    setActiveAction(action);
+    await tx.run(fn, () => {
       refetch();
       router.refresh();
-      setBusy(null);
-    }
+    });
   }
+
+  const busy = tx.stage !== "idle" && tx.stage !== "finalized" && tx.stage !== "failed";
 
   return (
     <div className="flex-1 flex flex-col">
@@ -118,11 +110,14 @@ export default function AgreementDetailPage() {
               </a>
             ) : null}
 
+            <TxStatusBanner stage={tx.stage} hash={tx.hash} error={tx.error} />
+
             <section className="flex flex-wrap gap-3">
               {isProvider && agreement.status === "DRAFT" && (
                 <ActionButton
                   label="Accept Agreement"
-                  busy={busy === "accept"}
+                  busy={busy && activeAction === "accept"}
+                  disabled={busy}
                   onClick={() =>
                     run("accept", () => writeCourtFlow(client!, "accept_agreement", [id]))
                   }
@@ -132,7 +127,8 @@ export default function AgreementDetailPage() {
                 <ActionButton
                   label="Cancel"
                   variant="ghost"
-                  busy={busy === "cancel"}
+                  busy={busy && activeAction === "cancel"}
+                  disabled={busy}
                   onClick={() =>
                     run("cancel", () => writeCourtFlow(client!, "cancel_agreement", [id]))
                   }
@@ -141,7 +137,8 @@ export default function AgreementDetailPage() {
               {isBuyer && agreement.status === "ACTIVE" && (
                 <ActionButton
                   label={`Fund Escrow (${weiToGen(agreement.agreed_amount)} GEN)`}
-                  busy={busy === "fund"}
+                  busy={busy && activeAction === "fund"}
+                  disabled={busy}
                   onClick={() =>
                     run("fund", () =>
                       writeCourtFlow(
@@ -158,7 +155,8 @@ export default function AgreementDetailPage() {
                 <>
                   <ActionButton
                     label="Approve Delivery"
-                    busy={busy === "approve"}
+                    busy={busy && activeAction === "approve"}
+                    disabled={busy}
                     onClick={() =>
                       run("approve", () => writeCourtFlow(client!, "approve_delivery", [id]))
                     }
@@ -166,7 +164,7 @@ export default function AgreementDetailPage() {
                   <ActionButton
                     label="Open Dispute"
                     variant="dispute"
-                    busy={busy === "dispute"}
+                    disabled={busy}
                     onClick={() => router.push(`/disputes/${id}?open=1`)}
                   />
                 </>
@@ -175,7 +173,8 @@ export default function AgreementDetailPage() {
                 <ActionButton
                   label="Claim Timeout Refund"
                   variant="ghost"
-                  busy={busy === "timeout"}
+                  busy={busy && activeAction === "timeout"}
+                  disabled={busy}
                   onClick={() =>
                     run("timeout", () => writeCourtFlow(client!, "claim_timeout", [id]))
                   }
@@ -185,7 +184,8 @@ export default function AgreementDetailPage() {
                 <ActionButton
                   label="Claim Delivery Timeout"
                   variant="ghost"
-                  busy={busy === "delivery-timeout"}
+                  busy={busy && activeAction === "delivery-timeout"}
+                  disabled={busy}
                   onClick={() =>
                     run("delivery-timeout", () =>
                       writeCourtFlow(client!, "claim_delivery_timeout", [id])
@@ -217,7 +217,8 @@ export default function AgreementDetailPage() {
                 </label>
                 <ActionButton
                   label="Submit Delivery"
-                  busy={busy === "deliver"}
+                  busy={busy && activeAction === "deliver"}
+                  disabled={busy}
                   onClick={() => {
                     const refs = fileRefs
                       .split("\n")
@@ -235,8 +236,6 @@ export default function AgreementDetailPage() {
                 />
               </section>
             )}
-
-            {actionError && <p className="text-sm text-dispute">{actionError}</p>}
           </div>
         )}
       </main>
@@ -248,11 +247,13 @@ function ActionButton({
   label,
   onClick,
   busy,
+  disabled,
   variant = "primary",
 }: {
   label: string;
   onClick: () => void;
   busy?: boolean;
+  disabled?: boolean;
   variant?: "primary" | "ghost" | "dispute";
 }) {
   const styles = {
@@ -264,10 +265,10 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      disabled={busy}
+      disabled={disabled}
       className={`rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${styles}`}
     >
-      {busy ? "Submitting…" : label}
+      {busy ? "Working…" : label}
     </button>
   );
 }

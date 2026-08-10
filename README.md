@@ -19,6 +19,10 @@ testing through the actual browser UI with a real injected wallet — all reachi
 real GenLayer consensus judgment and automatic settlement. See
 [Verification](#verification) below.
 
+**New here?** Read [`docs/submission-notes.md`](docs/submission-notes.md) first — a
+plain-language explanation of what this actually does and why it needed GenLayer
+specifically, without the marketing language.
+
 ## Why GenLayer
 
 A normal EVM contract can move money based on explicit state, but it cannot decide
@@ -126,6 +130,12 @@ NEXT_PUBLIC_COURTFLOW_ADDRESS=<deployed address>
 cd frontend
 npm run dev
 ```
+
+Every write goes through `frontend/src/lib/genlayer/useTxStatus.ts`, which surfaces the
+actual stages of a GenLayer transaction rather than a generic spinner: waiting for the
+wallet to sign, submitted, awaiting validator consensus, then finalized or failed
+(with the real error) — this is user-visible in the status banner on the agreement and
+dispute pages, not just internal state.
 
 Connect an injected wallet (MetaMask/Rabby) on the GenLayer network you deployed to
 (StudioNet: chain ID `61999`, RPC `https://studio.genlayer.com/api`). Two distinct

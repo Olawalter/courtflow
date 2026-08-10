@@ -5,9 +5,11 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { TopNav } from "@/components/TopNav";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConsensusAnimation } from "@/components/consensus/ConsensusAnimation";
+import { TxStatusBanner } from "@/components/TxStatusBanner";
 import { useAgreement, useDelivery, useDispute, useJudgment } from "@/lib/genlayer/hooks";
 import { useWallet } from "@/lib/genlayer/wallet";
-import { writeCourtFlow, waitForCourtFlowTx, weiToGen } from "@/lib/genlayer/contract";
+import { writeCourtFlow, weiToGen } from "@/lib/genlayer/contract";
+import { useTxStatus } from "@/lib/genlayer/useTxStatus";
 import { EvidenceGraph } from "@/components/evidence/EvidenceGraph";
 
 // MVP convention: one dispute per agreement, dispute_id === agreement_id.
@@ -42,70 +44,38 @@ export default function DisputeDetailPage() {
 
   const client = useWallet((s) => s.client);
   const address = useWallet((s) => s.address);
+  const tx = useTxStatus();
+  const [activeAction, setActiveAction] = useState<string | null>(null);
 
   const [claim, setClaim] = useState("");
   const [response, setResponse] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [judging, setJudging] = useState(false);
 
   const isBuyer = address && agreement && address.toLowerCase() === agreement.buyer.toLowerCase();
   const isProvider =
     address && agreement && address.toLowerCase() === agreement.provider.toLowerCase();
   const isParty = isBuyer || isProvider;
 
-  // Each handler refetches in `finally`, not just on success: the write
-  // itself can succeed on-chain even when the client-side wait/poll step
-  // throws (flaky RPC, timeout), so a caught error here must not be trusted
-  // to mean nothing happened.
-  async function openDispute() {
-    if (!client || !claim.trim()) return;
-    setBusy("open");
-    setActionError(null);
-    try {
-      const hash = await writeCourtFlow(client, "open_dispute", [id, id, claim.trim()]);
-      await waitForCourtFlowTx(client, hash);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Transaction failed");
-    } finally {
+  const busy = tx.stage !== "idle" && tx.stage !== "finalized" && tx.stage !== "failed";
+
+  async function run(action: string, fn: () => Promise<import("genlayer-js/types").TransactionHash>) {
+    setActiveAction(action);
+    await tx.run(fn, () => {
       refetchAll();
       router.refresh();
-      setBusy(null);
-    }
+    });
   }
 
-  async function respondToDispute() {
-    if (!client || !response.trim()) return;
-    setBusy("respond");
-    setActionError(null);
-    try {
-      const hash = await writeCourtFlow(client, "respond_to_dispute", [id, response.trim()]);
-      await waitForCourtFlowTx(client, hash);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Transaction failed");
-    } finally {
-      refetchAll();
-      router.refresh();
-      setBusy(null);
-    }
-  }
+  const openDispute = () =>
+    claim.trim() &&
+    run("open", () => writeCourtFlow(client!, "open_dispute", [id, id, claim.trim()]));
 
-  async function triggerJudgment() {
-    if (!client) return;
-    setJudging(true);
-    setActionError(null);
-    try {
-      const hash = await writeCourtFlow(client, "run_judgment", [id]);
-      await waitForCourtFlowTx(client, hash);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Transaction failed");
-    } finally {
-      refetchAll();
-      router.refresh();
-      setJudging(false);
-    }
-  }
+  const respondToDispute = () =>
+    response.trim() &&
+    run("respond", () => writeCourtFlow(client!, "respond_to_dispute", [id, response.trim()]));
 
+  const triggerJudgment = () => run("judge", () => writeCourtFlow(client!, "run_judgment", [id]));
+
+  const judging = busy && activeAction === "judge";
   const showOpenForm = (!dispute && (openOnLoad || isBuyer)) && agreement?.status === "DELIVERED";
 
   return (
@@ -129,6 +99,8 @@ export default function DisputeDetailPage() {
 
           {agreementError && <p className="text-sm text-dispute">{agreementError}</p>}
 
+          <TxStatusBanner stage={tx.stage} hash={tx.hash} error={tx.error} />
+
           {showOpenForm && (
             <section className="rounded-lg border border-dispute/40 bg-dispute/5 p-5">
               <h2 className="text-sm font-medium text-foreground mb-3">Open a dispute</h2>
@@ -141,10 +113,10 @@ export default function DisputeDetailPage() {
               />
               <button
                 onClick={openDispute}
-                disabled={busy === "open" || !claim.trim()}
+                disabled={busy || !claim.trim()}
                 className="rounded-md bg-dispute px-4 py-2 text-sm font-medium text-white hover:bg-dispute/90 disabled:opacity-60 transition-colors"
               >
-                {busy === "open" ? "Submitting…" : "Submit Dispute"}
+                {busy && activeAction === "open" ? "Working…" : "Submit Dispute"}
               </button>
             </section>
           )}
@@ -178,10 +150,10 @@ export default function DisputeDetailPage() {
                   />
                   <button
                     onClick={respondToDispute}
-                    disabled={busy === "respond" || !response.trim()}
+                    disabled={busy || !response.trim()}
                     className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-60 transition-colors"
                   >
-                    {busy === "respond" ? "Submitting…" : "Submit Response"}
+                    {busy && activeAction === "respond" ? "Working…" : "Submit Response"}
                   </button>
                 </section>
               ) : (
@@ -215,7 +187,7 @@ export default function DisputeDetailPage() {
               {!judgment && dispute.status === "UNDER_REVIEW" && isParty && (
                 <button
                   onClick={triggerJudgment}
-                  disabled={judging}
+                  disabled={busy}
                   className="self-center rounded-md bg-consensus px-5 py-2.5 text-sm font-medium text-white hover:bg-consensus/90 disabled:opacity-60 transition-colors"
                 >
                   {judging ? "Awaiting Consensus…" : "Send to GenLayer for Judgment"}
@@ -227,8 +199,6 @@ export default function DisputeDetailPage() {
           {!dispute && !showOpenForm && !disputeError && (
             <p className="text-sm text-muted-foreground">No dispute has been opened yet.</p>
           )}
-
-          {actionError && <p className="text-sm text-dispute">{actionError}</p>}
         </div>
       </main>
     </div>
