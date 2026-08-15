@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { TopNav } from "@/components/TopNav";
+import { NetworkBanner } from "@/components/NetworkBanner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConsensusAnimation } from "@/components/consensus/ConsensusAnimation";
 import { TxStatusBanner } from "@/components/TxStatusBanner";
@@ -83,6 +84,7 @@ export default function DisputeDetailPage() {
       <TopNav />
       <main className="flex-1 px-6 py-8">
         <div className="mx-auto max-w-3xl flex flex-col gap-8">
+          <NetworkBanner />
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold text-foreground">DISPUTE — {id}</h1>
             <div className="flex items-center gap-3">

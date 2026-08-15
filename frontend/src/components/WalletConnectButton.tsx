@@ -2,22 +2,34 @@
 
 import { Wallet } from "lucide-react";
 import { useWallet } from "@/lib/genlayer/wallet";
+import { EXPECTED_CHAIN_ID, EXPECTED_CHAIN_LABEL } from "@/lib/genlayer/network";
 
 function short(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
 export function WalletConnectButton() {
-  const { address, connecting, error, connect, disconnect } = useWallet();
+  const { address, connecting, error, wrongNetwork, connect, disconnect } = useWallet();
 
   if (address) {
     return (
       <button
         onClick={disconnect}
-        className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:border-primary/60 transition-colors"
+        title={
+          wrongNetwork
+            ? `Wrong network — switch to ${EXPECTED_CHAIN_LABEL} (chain ${EXPECTED_CHAIN_ID})`
+            : `Connected to ${EXPECTED_CHAIN_LABEL}`
+        }
+        className={`inline-flex items-center gap-2 rounded-md border bg-surface px-3 py-1.5 text-sm text-foreground transition-colors ${
+          wrongNetwork
+            ? "border-dispute/60 hover:border-dispute"
+            : "border-border hover:border-primary/60"
+        }`}
       >
-        <span className="h-2 w-2 rounded-full bg-success" />
-        {short(address)}
+        <span
+          className={`h-2 w-2 rounded-full ${wrongNetwork ? "bg-dispute" : "bg-success"}`}
+        />
+        {wrongNetwork ? "Wrong network" : short(address)}
       </button>
     );
   }

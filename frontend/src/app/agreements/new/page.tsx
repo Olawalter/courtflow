@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { TopNav } from "@/components/TopNav";
+import { NetworkBanner } from "@/components/NetworkBanner";
 import { useWallet } from "@/lib/genlayer/wallet";
 import {
   writeCourtFlow,
@@ -105,6 +106,8 @@ export default function NewAgreementPage() {
               Connect wallet to continue
             </button>
           )}
+
+          <NetworkBanner />
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
             <Field label="Agreement ID" error={errors.agreementId?.message}>

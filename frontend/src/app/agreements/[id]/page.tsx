@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { TopNav } from "@/components/TopNav";
 import { DeploymentBanner } from "@/components/DeploymentBanner";
+import { NetworkBanner } from "@/components/NetworkBanner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { LifecycleTracker } from "@/components/agreement/LifecycleTracker";
 import { TxStatusBanner } from "@/components/TxStatusBanner";
@@ -49,6 +50,9 @@ export default function AgreementDetailPage() {
       {!deployed && <DeploymentBanner />}
 
       <main className="flex-1 px-6 py-8">
+        <div className="mx-auto max-w-3xl">
+          <NetworkBanner />
+        </div>
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {error && <p className="text-sm text-dispute">{error}</p>}
 

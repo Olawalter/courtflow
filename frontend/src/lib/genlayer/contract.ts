@@ -3,7 +3,7 @@
 import { CalldataAddress } from "genlayer-js/types";
 import type { Address, GenLayerClient, TransactionHash } from "genlayer-js/types";
 import { hexToBytes } from "viem";
-import type { activeChain } from "./wallet";
+import { ensureActiveChain, type activeChain } from "./network";
 
 // The calldata encoder never auto-detects address-shaped strings -- that's a
 // convenience only the `genlayer` CLI's own arg parser does. Any contract
@@ -66,6 +66,19 @@ export async function writeCourtFlow(
   valueGen: bigint = BigInt(0)
 ): Promise<TransactionHash> {
   const address = requireDeployedAddress();
+
+  // Every state-changing CourtFlow call funnels through here, so this is the
+  // one place that has to reconcile the wallet's network.
+  //
+  // genlayer-js builds `eth_sendTransaction` with an explicit
+  // `chainId: 0x<activeChain.id>` field. If the wallet is sitting on any other
+  // network, MetaMask rejects the request outright with
+  // `-32602 … chainId should be same as current chainId` — the transaction is
+  // never signed and nothing reaches the contract. Reconciling the chain first
+  // (and throwing WrongNetworkError if it can't be reconciled) means we either
+  // send on the right network or don't send at all.
+  await ensureActiveChain();
+
   const hash = await client.writeContract({
     address,
     functionName,
