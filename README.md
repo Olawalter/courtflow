@@ -68,10 +68,13 @@ what it changed.
 
 ```
 contracts/courtflow.py        Intelligent Contract (GenVM v0.3.0-rc7 SDK)
-tests/direct/                 In-process unit tests -- 74 tests, all passing
+tests/direct/                 In-process unit tests -- 79 tests, all passing
 tests/integration/            Real-consensus test against a live network (gltest) -- passing
 frontend/                     Next.js app
+frontend/src/lib/genlayer/network.ts  Single source of truth for chain id/RPC + the wallet chain guard
+frontend/tests/               Frontend tests (vitest) -- wallet chain guard, 15 tests
 frontend/scripts/e2e_demo.mjs Scripted end-to-end run via genlayer-js (see below)
+frontend/scripts/verify_chain.mjs  Chain-guard verification + a real create_agreement on the live contract
 docs/                         architecture, contract spec, adjudication model, security review
 gltest.config.example.yaml    template -- copy to gltest.config.yaml and fill in your own keys
 ```
@@ -110,8 +113,13 @@ keys (never commit real keys — `gltest.config.yaml` is gitignored on purpose).
 
 ```bash
 genvm-lint check contracts/courtflow.py --json   # structural + SDK validation, clean
-pytest tests/direct/ -v                          # 74/74 passing
+pytest tests/direct/ -v                          # 79/79 passing
 gltest tests/integration/test_adjudication.py -v -s --network studionet
+
+cd frontend
+npm run lint && npx tsc --noEmit                 # clean
+npm test                                         # 15/15 passing (wallet chain guard)
+node scripts/verify_chain.mjs                    # real create_agreement on the live contract
 ```
 
 The integration test runs the complete lifecycle — including a real
@@ -157,10 +165,26 @@ wallet to sign, submitted, awaiting validator consensus, then finalized or faile
 (with the real error) — this is user-visible in the status banner on the agreement and
 dispute pages, not just internal state.
 
-Connect an injected wallet (MetaMask/Rabby) on the GenLayer network you deployed to
-(StudioNet: chain ID `61999`, RPC `https://studio.genlayer.com/api`). Two distinct
-accounts are needed to exercise a full agreement (buyer + provider) — switch between
-them in the wallet as you move through the lifecycle.
+Connect an injected wallet (MetaMask/Rabby). You do **not** have to add or select the
+network by hand: the app reconciles the wallet's chain before every state-changing
+call — it asks the wallet to switch to the configured network, adds the network first
+if the wallet has never seen it, then re-reads the chain and only proceeds once it is
+confirmed. If you decline the switch, the write is refused with an explicit
+"wrong network" message rather than being submitted and failing at the RPC.
+
+This matters because genlayer-js stamps each transaction with an explicit `chainId`,
+and wallets reject a transaction whose `chainId` doesn't match their currently
+selected network (`chainId should be same as current chainId`). Reconciling the chain
+up front is what keeps that error from reaching the user.
+
+The target network comes from `NEXT_PUBLIC_GENLAYER_CHAIN` (StudioNet: chain ID
+`61999`, RPC `https://studio.genlayer.com/api`); chain id, RPC and the wallet
+add/switch parameters are all derived from that single value in
+`frontend/src/lib/genlayer/network.ts`. Reads don't need a wallet at all, so browsing
+works on any network.
+
+Two distinct accounts are needed to exercise a full agreement (buyer + provider) —
+switch between them in the wallet as you move through the lifecycle.
 
 ## Verification
 
